@@ -4,6 +4,12 @@ google_accounts.json
 google_account_id
 auth_profiles/
 
+# App results & Cache
+quota_result.json
+quota_cache.json
+.auto_switch_retry_count
+.last_quota_error
+
 # Python cache
 __pycache__/
 *.pyc
@@ -16,3 +22,7 @@ env/
 # IDE settings
 .vscode/
 .idea/
+
+# OS files
+.DS_Store
+Thumbs.db

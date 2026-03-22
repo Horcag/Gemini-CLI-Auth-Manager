@@ -31,11 +31,11 @@ AUTH_CONFIG_FILE = GEMINI_DIR / "auth_config.json"
 QUOTA_CACHE_FILE = GEMINI_DIR / "quota_cache.json"
 
 # Default configuration
-DEFAULT_THRESHOLD = 0.10  # 10% remaining triggers switch
-DEFAULT_MODELS_TO_CHECK = ["gemini-3-pro-preview", "gemini-2.5-pro"]
+DEFAULT_THRESHOLD = 10 # 10% remaining triggers switch (integer percentage)
+DEFAULT_MODELS_TO_CHECK = ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview"]
 DEFAULT_CACHE_MINUTES = 3  # Cache quota check for 3 minutes
-DEFAULT_STRATEGY = "gemini3-first"
-DEFAULT_PATTERN = "gemini-3.*"
+DEFAULT_STRATEGY = "gemini3.1-series-only"
+DEFAULT_PATTERN = "gemini-3.1.*"
 
 
 def log(message, level="INFO"):
@@ -215,7 +215,7 @@ def check_quota(config, session_id):
         target_buckets = [b for b in buckets if b.get("remainingFraction") is not None]
         log("Strategy: conservative (checking ALL models)", "DEBUG")
     
-    elif strategy == "gemini3-first":
+    elif strategy in ["gemini3-first", "gemini3.1-pro-only", "gemini3.1-series-only"]:
         # Check buckets matching pattern
         pattern = config["model_pattern"]
         try:
@@ -224,7 +224,21 @@ def check_quota(config, session_id):
                 b for b in buckets 
                 if b.get("modelId") and regex.match(b["modelId"]) and b.get("remainingFraction") is not None
             ]
-            log(f"Strategy: gemini3-first (pattern: {pattern})", "DEBUG")
+            log(f"Strategy: {strategy} (pattern: {pattern})", "DEBUG")
+        except:
+            log(f"Invalid regex: {pattern}", "WARN")
+            target_buckets = []
+    
+    elif strategy == "custom":
+        # Check buckets matching custom pattern
+        pattern = config.get("custom_model_pattern") or config["model_pattern"]
+        try:
+            regex = re.compile(pattern)
+            target_buckets = [
+                b for b in buckets 
+                if b.get("modelId") and regex.match(b["modelId"]) and b.get("remainingFraction") is not None
+            ]
+            log(f"Strategy: custom (pattern: {pattern})", "DEBUG")
         except:
             log(f"Invalid regex: {pattern}", "WARN")
             target_buckets = []

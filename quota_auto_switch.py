@@ -19,9 +19,9 @@ ERROR_STATE_FILE = GEMINI_DIR / ".last_quota_error"  # For BeforeAgent pre-check
 DEFAULT_CONFIG = {
     "auto_switch": {
         "enabled": True,
-        "strategy": "gemini3-first",
-        "model_pattern": "gemini-3.*",
-        "threshold": 5,
+        "strategy": "gemini3.1-series-only",
+        "model_pattern": "gemini-3.1.*",
+        "threshold": 10,
         "max_retries": 3,
         "notify_on_switch": True
     }
@@ -146,9 +146,9 @@ def should_switch_by_strategy(config, model_usage=None):
     Returns True if switch is needed.
     """
     auto_switch = config.get("auto_switch", {})
-    strategy = auto_switch.get("strategy", "gemini3-first")
-    threshold = auto_switch.get("threshold", 5)
-    model_pattern = auto_switch.get("model_pattern", "gemini-3.*")
+    strategy = auto_switch.get("strategy", "gemini3.1-series-only")
+    threshold = auto_switch.get("threshold", 10)
+    model_pattern = auto_switch.get("model_pattern", "gemini-3.1.*")
     
     # If no model usage data, rely on error detection alone
     if not model_usage:
@@ -159,8 +159,8 @@ def should_switch_by_strategy(config, model_usage=None):
         all_exhausted = all(usage <= threshold for usage in model_usage.values())
         return all_exhausted
     
-    elif strategy == "gemini3-first":
-        # Switch when any Gemini 3.x model is below threshold
+    elif strategy in ["gemini3-first", "gemini3.1-pro-only", "gemini3.1-series-only"]:
+        # Switch when any matched model is below threshold
         pattern = re.compile(model_pattern, re.IGNORECASE)
         for model, usage in model_usage.items():
             if pattern.match(model) and usage <= threshold:

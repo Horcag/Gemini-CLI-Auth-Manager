@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gemini CLI Auth Manager v2.2 - Installer
+Gemini CLI Auth Manager v2.3 - Installer
 Installs account manager with optional auto-switch hook.
 """
 import json
@@ -13,7 +13,7 @@ from pathlib import Path
 # --- Configuration Dictionary ---
 CONFIG = {
     'en': {
-        'desc': 'Switch Gemini accounts. Usage: /change <index_or_email|next|strategy|config>',
+        'desc': 'Switch Gemini accounts. Usage: /change <index|next|strategy|config|menu>',
         'success': 'Installation Complete!',
         'msg_cli': '1. CLI Command:  Type "gchange" in your terminal.',
         'msg_slash': '2. Slash Command: Type "/change" in Gemini CLI.',
@@ -23,7 +23,7 @@ CONFIG = {
         'hook_skip': '[Skip] Auto-switch disabled by user.'
     },
     'cn': {
-        'desc': '切换 Gemini 账户。用法: /change <序号或邮箱|next|strategy|config>',
+        'desc': '切换 Gemini 账户。用法: /change <序号|next|strategy|config|menu>',
         'success': '安装完成！',
         'msg_cli': '1. 终端命令: 在终端直接输入 "gchange"',
         'msg_slash': '2. 斜杠命令: 在 Gemini CLI 中输入 "/change"',
@@ -165,7 +165,7 @@ def update_settings_json(gemini_dir, after_agent_hook, before_agent_hook=None):
 
 def install():
     print("=" * 50)
-    print("   Gemini-CLI-Auth-Manager v2.2 Installer")
+    print("   Gemini-CLI-Auth-Manager v2.3 Installer")
     print("   Fast Switching + Auto Rotation Support")
     print("=" * 50)
 
@@ -283,9 +283,9 @@ def install():
         if "auto_switch" not in config_data:
             config_data["auto_switch"] = {
                 "enabled": True,
-                "strategy": "gemini3-first",
-                "model_pattern": "gemini-3.*",
-                "threshold": 5,
+                "strategy": "gemini3.1-series-only",
+                "model_pattern": "gemini-3.1.*",
+                "threshold": 10,
                 "max_retries": 3,
                 "notify_on_switch": True,
                 "auto_restart": False,

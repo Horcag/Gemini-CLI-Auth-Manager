@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gemini CLI Auth Manager v2.2
+Gemini CLI Auth Manager v2.3
 Fast account switching with auto-rotation support for Gemini CLI.
 """
 import json
@@ -15,19 +15,6 @@ import requests
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-
-# --- OAuth Constants ---
-# Client credentials are loaded from ~/.gemini/auth_config.json (written by install.py)
-GOOGLE_CLIENT_ID = ""
-GOOGLE_CLIENT_SECRET = ""
-GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
-GOOGLE_SCOPES = [
-    "https://www.googleapis.com/auth/cloud-platform",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile"
-]
 
 # --- Configuration Paths ---
 GEMINI_DIR = Path(os.path.expanduser("~/.gemini"))
@@ -46,10 +33,10 @@ DEFAULT_CONFIG = {
     },
     "auto_switch": {
         "enabled": True,
-        "strategy": "gemini3-first",
-        "model_pattern": "gemini-3.*",
+        "strategy": "gemini3.1-series-only",
+        "model_pattern": "gemini-3.1.*",
         "custom_model_pattern": "",
-        "threshold": 5,
+        "threshold": 10,
         "max_retries": 3,
         "notify_on_switch": True,
         "auto_restart": False,
@@ -73,11 +60,19 @@ def _init_oauth_credentials():
     return DEFAULT_CONFIG["oauth_client"]["client_id"], DEFAULT_CONFIG["oauth_client"]["client_secret"]
 
 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET = _init_oauth_credentials()
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile"
+]
 
 # --- Language Dictionary ---
 LANG = {
     "en": {
-        "title": "GEMINI-CLI-AUTH-MANAGER v2.2",
+        "title": "GEMINI-CLI-AUTH-MANAGER v2.3",
         "subtitle": "Fast Switcher + Auto Rotation | By Besty",
         "status": "STATUS",
         "active": "ACTIVE",
@@ -98,147 +93,127 @@ LANG = {
         "switch_account": "Switch Account",
         "switch_next": "Switch to Next Account",
         "change_strategy": "Change Strategy",
-        "view_quota": "View Current Quota",
-        "config_auto": "Configure Auto-Switch",
-        "toggle_auto": "Toggle Auto-Switch (Enable/Disable)",
-        "toggle_restart": "Toggle Auto-Restart",
-        "manage_pool": "Manage Account Pool",
-        "available_accounts": "Available Accounts",
-        "enter_account_num": "Enter account number",
         "select_strategy": "Select Strategy",
-        "conservative_desc": "Switch when ALL models exhausted",
-        "gemini3_desc": "Switch when Gemini 3.x exhausted",
-        "custom_desc": "Switch when CUSTOM model exhausted",
-        "enter_custom_pattern": "Enter model regex (e.g. gemini-2.5-pro.*): ",
-        "auto_config": "Auto-Switch Configuration",
-        "set_threshold": "Set Threshold",
-        "set_retries": "Set Max Retries",
-        "set_pattern": "Set Model Pattern",
-        "toggle_restart_sub": "Toggle Auto-Restart",
-        "toggle_notify": "Toggle Notifications",
-        "pool_mgmt": "Account Pool Management",
+        "strategy_desc": {
+            "conservative": "Monitor ALL models (Switch if ANY runs out)",
+            "gemini3-first": "Monitor Gemini 3.0+ series (gemini-3.*)",
+            "gemini3.1-pro-only": "Monitor Gemini 3.1 Pro Only (gemini-3.1-pro.*)",
+            "gemini3.1-series-only": "Monitor Gemini 3.1 Series (gemini-3.1.*)",
+            "custom": "Custom regex pattern"
+        },
+        "enter_custom_pattern": "Enter custom regex pattern (e.g. gemini-2.5.*): ",
+        "invalid_regex": "Invalid regex pattern. Please try again.",
+        "strategy_updated": "Strategy set to",
+        "strategy_invalid": "Invalid strategy",
+        "manage_pool": "Manage Account Pool",
+        "toggle_auto": "Toggle Auto-Switch",
+        "toggle_restart": "Toggle Auto-Restart",
+        "config_details": "View Detailed Config",
+        "current_val": "Current value",
+        "new_val": "Enter new value (empty to cancel)",
+        "updated": "Updated",
+        "invalid_val": "Invalid value",
+        "error": "Error",
+        "success": "Success",
+        "account_pool": "Account Pool Management",
+        "pool_list": "List Accounts",
+        "pool_login": "Add Account (OAuth Login)",
+        "pool_remove": "Remove Account",
+        "pool_import": "Import Credentials",
+        "pool_back": "Back to Main Menu",
+        "enter_idx_email": "Enter account index or email",
+        "confirm_remove": "Are you sure you want to remove account",
+        "login_browser": "Opening browser for OAuth login...",
+        "login_success": "Successfully added account",
+        "login_failed": "Login failed",
+        "file_not_found": "File not found",
+        "import_success": "Imported credentials from",
+        "restarting": "Restarting Gemini CLI...",
+        "pool_overview": "Account Pool Overview",
+        "no_profiles": "No accounts found in pool",
         "total": "Total",
         "options": "Options",
-        "remove_account": "Remove account",
-        "import_creds": "Import credentials",
-        "back": "Back to main menu",
-        "invalid_choice": "Invalid choice. Please try again.",
-        "press_enter": "Press Enter to continue...",
-        "pool_overview": "Account Pool Overview",
-        "standby": "Standby",
-        "error": "Error",
-        "ok": "OK",
-        "warning": "Warning",
-        "info": "Info",
-        "no_profiles": "No profiles found",
-        "switched_to": "Switched to",
-        "already_using": "Already using",
-        "account_added": "Account added",
-        "account_removed": "Removed",
-        "cannot_remove_active": "Cannot remove active account",
-        "switch_first": "Please switch to another account first",
-        "confirm_remove": "Remove",
-        "cancelled": "Cancelled",
-        "enter_email": "Enter account email",
-        "invalid_email": "Invalid email format",
-        "account_exists": "Account already exists",
-        "use_current_creds": "Use current credentials for",
-        "dir_created": "Account directory created",
-        "complete_setup": "To complete setup",
-        "file_not_found": "File not found",
-        "imported": "Imported",
-        "enter_path": "Enter credentials file path",
-        "enter_remove_num": "Enter account number to remove",
-        "login_account": "Login and capture new account",
-        "starting_login": "Starting official Gemini CLI... Please complete login in your browser.",
-        "login_success": "Login successful. Account captured:",
-        "login_failed": "Login failed or credentials not found.",
-        "backup_restored": "Original credentials restored.",
-        "pool_login": "Login to new account (Auto-Capture)"
+        "pool_mgmt": "Account Pool Management",
+        "remove_account": "Remove Account",
+        "import_creds": "Import Credentials",
+        "enter_remove_num": "Enter account index to remove",
+        "enter_path": "Enter path to credentials file",
+        "back": "Back",
+        "active": "Active",
+        "standby": "Standby"
     },
     "cn": {
-        "title": "GEMINI-CLI 账号管理器 v2.2",
-        "subtitle": "快速切换 + 自动轮换 | By Besty",
+        "title": "GEMINI CLI 账号管理器 v2.3",
+        "subtitle": "极速切换 + 自动轮换 | By Besty",
         "status": "状态",
-        "active": "活跃",
-        "auto": "自动",
+        "active": "正在使用",
+        "auto": "自动切换",
         "enabled": "已启用",
         "disabled": "已禁用",
-        "accounts": "账号列表",
-        "usage": "使用方法",
+        "accounts": "号池",
+        "usage": "用法",
         "current_status": "当前状态",
-        "active_account": "活跃账号",
-        "auto_switch": "自动切换",
-        "strategy": "策略",
-        "threshold": "阈值",
-        "menu": "菜单",
+        "active_account": "当前账号",
+        "auto_switch": "配额自动切换",
+        "strategy": "切换策略",
+        "threshold": "切换阈值",
+        "menu": "主菜单",
         "exit": "退出",
         "goodbye": "再见！",
         "enter_choice": "请输入选项",
         "switch_account": "切换账号",
         "switch_next": "切换到下一个账号",
-        "change_strategy": "更改策略",
-        "view_quota": "查看当前配额",
-        "config_auto": "配置自动切换",
-        "toggle_auto": "开关自动切换功能",
-        "toggle_restart": "开关自动重启功能",
+        "change_strategy": "更改轮换策略",
+        "select_strategy": "选择轮换策略",
+        "strategy_desc": {
+            "conservative": "保守模式：监控所有模型（任一耗尽即切）",
+            "gemini3-first": "Gemini 3.0+ 优先 (匹配 gemini-3.*)",
+            "gemini3.1-pro-only": "仅监控 Gemini 3.1 Pro (匹配 gemini-3.1-pro.*)",
+            "gemini3.1-series-only": "监控 Gemini 3.1 全系列 (匹配 gemini-3.1.*)",
+            "custom": "自定义正则表达式模式"
+        },
+        "enter_custom_pattern": "请输入自定义正则表达式 (例如 gemini-2.5.*): ",
+        "invalid_regex": "无效的正则表达式，请重试。",
+        "strategy_updated": "策略已设置为",
+        "strategy_invalid": "无效的策略名称",
         "manage_pool": "管理账号池",
-        "available_accounts": "可用账号",
-        "enter_account_num": "请输入账号编号",
-        "select_strategy": "选择策略",
-        "conservative_desc": "所有模型耗尽时切换",
-        "gemini3_desc": "Gemini 3.x 耗尽时切换",
-        "custom_desc": "自定义模型耗尽时切换",
-        "enter_custom_pattern": "请输入模型匹配正则 (例: gemini-2.5-pro.*): ",
-        "auto_config": "自动切换配置",
-        "set_threshold": "设置阈值",
-        "set_retries": "设置最大重试次数",
-        "set_pattern": "设置模型匹配规则",
-        "toggle_restart_sub": "开关自动重启",
-        "toggle_notify": "切换通知开关",
-        "pool_mgmt": "账号池管理",
-        "total": "共计",
-        "options": "选项",
-        "remove_account": "删除账号",
-        "import_creds": "导入凭证",
-        "back": "返回主菜单",
-        "invalid_choice": "无效选项，请重试。",
-        "press_enter": "按回车键继续...",
-        "pool_overview": "账号池概览",
-        "standby": "待机",
+        "toggle_auto": "开启/关闭自动切换",
+        "toggle_restart": "开启/关闭自动重启",
+        "config_details": "查看详细配置",
+        "current_val": "当前值",
+        "new_val": "请输入新值 (留空取消)",
+        "updated": "已更新",
+        "invalid_val": "无效的值",
         "error": "错误",
-        "ok": "成功",
-        "warning": "警告",
-        "info": "提示",
-        "no_profiles": "未找到账号",
-        "switched_to": "已切换到",
-        "already_using": "当前已在使用",
-        "account_added": "账号已添加",
-        "account_removed": "已删除",
-        "cannot_remove_active": "无法删除活跃账号",
-        "switch_first": "请先切换到其他账号",
-        "confirm_remove": "确认删除",
-        "cancelled": "已取消",
-        "enter_email": "请输入账号邮箱",
-        "invalid_email": "邮箱格式无效",
-        "account_exists": "账号已存在",
-        "use_current_creds": "是否使用当前凭证",
-        "dir_created": "账号目录已创建",
-        "complete_setup": "完成设置步骤",
-        "file_not_found": "文件未找到",
-        "imported": "已导入",
-        "enter_path": "请输入凭证文件路径",
-        "enter_remove_num": "请输入要删除的账号编号",
-        "login_account": "登录并捕获新账号",
-        "starting_login": "正在启动官方 Gemini CLI... 请在浏览器中完成登录操作。",
-        "login_success": "登录成功，账号已捕获：",
-        "login_failed": "登录失败或未找到凭证。",
-        "backup_restored": "原始凭证已恢复。",
-        "pool_login": "登录新账号 (自动捕获)"
+        "success": "成功",
+        "account_pool": "账号池管理",
+        "pool_list": "查看账号列表",
+        "pool_login": "添加账号 (OAuth 登录)",
+        "pool_remove": "删除账号",
+        "pool_import": "导入凭据文件",
+        "pool_back": "返回主菜单",
+        "enter_idx_email": "请输入账号序号或邮箱",
+        "confirm_remove": "确定要删除账号吗",
+        "login_browser": "正在打开浏览器进行登录...",
+        "login_success": "成功添加账号",
+        "login_failed": "登录失败",
+        "file_not_found": "找不到文件",
+        "import_success": "成功导入凭据",
+        "restarting": "正在重启 Gemini CLI...",
+        "pool_overview": "账号池概览",
+        "no_profiles": "号池中没有账号",
+        "total": "总计",
+        "options": "选项",
+        "pool_mgmt": "号池管理",
+        "remove_account": "删除账号",
+        "import_creds": "导入凭据",
+        "enter_remove_num": "请输入要删除的账号序号",
+        "enter_path": "请输入凭据文件路径",
+        "back": "返回",
+        "active": "正在使用",
+        "standby": "待命"
     }
 }
-
-# --- UI Helpers ---
 class UI:
     RESET = "\033[0m"
     BOLD  = "\033[1m"
@@ -507,35 +482,36 @@ def handle_strategy(args):
     """Handle strategy command."""
     config = load_config()
     auto_switch = config.get("auto_switch", DEFAULT_CONFIG["auto_switch"])
-    
+
+    valid_strategies = ["conservative", "gemini3-first", "gemini3.1-pro-only", "gemini3.1-series-only", "custom"]
+
     if not args:
         # Show current strategy
-        print(f"\n{UI.BOLD}Current Strategy:{UI.RESET} {auto_switch.get('strategy', 'gemini3-first')}")
-        if auto_switch.get('strategy') == 'custom':
+        current = auto_switch.get("strategy", "gemini3.1-series-only")
+        print(f"\n{UI.BOLD}{t('strategy')}:{UI.RESET} {current}")
+        if current == 'custom':
             print(f"  {UI.DIM}Custom Pattern: {auto_switch.get('custom_model_pattern', 'Not set')}{UI.RESET}")
-            
-        print(f"\n{UI.BOLD}Available Strategies:{UI.RESET}")
-        print(f"  1. {UI.CYAN}conservative{UI.RESET}  - {t('conservative_desc')}")
-        print(f"  2. {UI.CYAN}gemini3-first{UI.RESET} - {t('gemini3_desc')}")
-        print(f"  3. {UI.CYAN}custom{UI.RESET}         - {t('custom_desc')}")
-        print(f"\n{UI.BOLD}Usage:{UI.RESET} gchange strategy <conservative|gemini3-first|custom>")
+
+        print(f"\n{UI.BOLD}{t('select_strategy')}:{UI.RESET}")
+        for s in valid_strategies:
+            desc = t("strategy_desc").get(s, "")
+            print(f"  - {UI.CYAN}{s.ljust(22)}{UI.RESET} : {desc}")
+
+        print(f"\n{UI.BOLD}{t('usage')}:{UI.RESET} gchange strategy <{'|'.join(valid_strategies)}>")
         return
-    
+
     strategy = args[0].lower()
-    valid_strategies = ["conservative", "gemini3-first", "custom"]
-    
+
+    # Alias support
+    if strategy == "pro": strategy = "gemini3.1-pro-only"
+    if strategy == "series": strategy = "gemini3.1-series-only"
+
     if strategy not in valid_strategies:
-        print(f"{UI.RED}[Error] Invalid strategy: {strategy}{UI.RESET}")
+        print(f"{UI.RED}[{t('error')}] {t('strategy_invalid')}: {strategy}{UI.RESET}")
         print(f"Valid options: {', '.join(valid_strategies)}")
         return
-    
+
     if strategy == "custom":
-        print(f"\n{UI.DIM}Common Models for Reference:{UI.RESET}")
-        print(f"  - gemini-2.5-flash")
-        print(f"  - gemini-2.5-pro")
-        print(f"  - gemini-3.0-pro")
-        print(f"  - gemini-3.0-flash")
-        
         # Read the remaining args as pattern or prompt
         if len(args) > 1:
             pattern = args[1]
@@ -545,20 +521,35 @@ def handle_strategy(args):
             except (EOFError, KeyboardInterrupt):
                 print()
                 return
-                
+
         if pattern:
-            auto_switch["custom_model_pattern"] = pattern
+            try:
+                re.compile(pattern)
+                auto_switch["custom_model_pattern"] = pattern
+            except re.error:
+                print(f"{UI.RED}[{t('error')}] {t('invalid_regex')}{UI.RESET}")
+                return
         else:
             print(f"{UI.YELLOW}[Warning] Custom pattern not set. Strategy change aborted.{UI.RESET}")
             return
-            
+
+    # Update model_pattern for presets
+    if strategy == "gemini3.1-pro-only":
+        auto_switch["model_pattern"] = "gemini-3.1-pro.*"
+    elif strategy == "gemini3.1-series-only":
+        auto_switch["model_pattern"] = "gemini-3.1.*"
+    elif strategy == "gemini3-first":
+        auto_switch["model_pattern"] = "gemini-3.*"
+
     auto_switch["strategy"] = strategy
     config["auto_switch"] = auto_switch
-    
+
     if save_config(config):
-        print(f"{UI.GREEN}[OK] Strategy set to: {strategy}{UI.RESET}")
+        print(f"{UI.GREEN}[OK] {t('strategy_updated')}: {UI.BOLD}{strategy}{UI.RESET}")
         if strategy == "custom":
-            print(f"     Pattern: {auto_switch.get('custom_model_pattern')}")
+            print(f"  Pattern: {auto_switch['custom_model_pattern']}")
+    else:
+        print(f"{UI.RED}[{t('error')}] Failed to save config.{UI.RESET}")
 
 
 def handle_config(args):
@@ -631,11 +622,11 @@ def handle_pool(args):
                     status = f"{UI.GREEN}● {t('active')}{UI.RESET}"
                 else:
                     status = f"{UI.DIM}○ {t('standby')}{UI.RESET}"
-                print(f"  {idx + 1:02d}. {p:40s} {status}")
+                print(f"  {idx + 1:02d}. {p:35s} {status}")
         
         print(f"{UI.line('-', 50)}")
         print(f"  {t('total')}: {UI.CYAN}{len(profiles)}{UI.RESET}")
-        print(f"\n{UI.BOLD}Commands:{UI.RESET}")
+        print(f"\n{UI.BOLD}{t('usage')}:{UI.RESET}")
         print(f"  gchange pool login            {t('pool_login')}")
         print(f"  gchange pool login <email>    {t('pool_login')}")
         print(f"  gchange pool remove <n>       {t('remove_account')}")
@@ -899,175 +890,122 @@ def login_account(args):
     input(f"\n  {t('press_enter')}")
 
 
+def _clear_screen():
+    """Clear terminal screen."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def _print_banner():
+    """Print the UI banner."""
+    print(f"{UI.CYAN}{UI.line('=')}{UI.RESET}")
+    print(f"{UI.BOLD}  {t('title')}{UI.RESET}")
+    print(f"  {UI.DIM}{t('subtitle')}{UI.RESET}")
+    print(f"{UI.CYAN}{UI.line('=')}{UI.RESET}")
+
 def interactive_menu():
     """Interactive configuration menu."""
     while True:
-        UI.header()
+        _clear_screen()
+        _print_banner()
+        
         config = load_config()
         auto_switch = config.get("auto_switch", DEFAULT_CONFIG["auto_switch"])
         active = get_active_account()
         profiles = get_profiles()
-        
+
         # Current Status
         print(f"\n  {UI.BOLD}{t('current_status')}:{UI.RESET}")
         print(f"  {t('active_account')} : {UI.GREEN}{active or 'None'}{UI.RESET}")
-        enabled_text = t('enabled') if auto_switch.get('enabled') else t('disabled')
-        print(f"  {t('auto_switch')}    : {UI.GREEN if auto_switch.get('enabled') else UI.RED}{enabled_text}{UI.RESET}")
-        print(f"  {t('strategy')}       : {UI.CYAN}{auto_switch.get('strategy', 'gemini3-first')}{UI.RESET}")
-        print(f"  {t('threshold')}      : {auto_switch.get('threshold', 5)}%")
-        restart_text = t('enabled') if auto_switch.get('auto_restart') else t('disabled')
-        print(f"  Only Restart      : {UI.GREEN if auto_switch.get('auto_restart') else UI.RED}{restart_text}{UI.RESET}")
+        is_enabled = auto_switch.get('enabled', True)
+        enabled_text = t('enabled') if is_enabled else t('disabled')
+        print(f"  {t('auto_switch')}    : {UI.GREEN if is_enabled else UI.RED}{enabled_text}{UI.RESET}")
+        print(f"  {t('strategy')}       : {UI.CYAN}{auto_switch.get('strategy', 'gemini3.1-series-only')}{UI.RESET}")
+        print(f"  {t('threshold')}      : {UI.YELLOW}{auto_switch.get('threshold', 10)}%{UI.RESET}")
         
+        is_restart = auto_switch.get('auto_restart', False)
+        restart_text = t('enabled') if is_restart else t('disabled')
+        print(f"  Auto-Restart      : {UI.GREEN if is_restart else UI.RED}{restart_text}{UI.RESET}")
+
         print(f"\n  {UI.BOLD}{t('menu')}:{UI.RESET}")
         print(f"  {UI.line('-', 40)}")
         print(f"  {UI.CYAN}1{UI.RESET}. {t('switch_account')}")
         print(f"  {UI.CYAN}2{UI.RESET}. {t('switch_next')}")
         print(f"  {UI.CYAN}3{UI.RESET}. {t('change_strategy')}")
-        print(f"  {UI.CYAN}4{UI.RESET}. {t('view_quota')}")
-        print(f"  {UI.CYAN}5{UI.RESET}. {t('config_auto')}")
-        print(f"  {UI.CYAN}6{UI.RESET}. {t('toggle_auto')}")
-        print(f"  {UI.CYAN}7{UI.RESET}. {t('toggle_restart')}")
-        print(f"  {UI.CYAN}8{UI.RESET}. {t('manage_pool')}")
+        print(f"  {UI.CYAN}4{UI.RESET}. {t('manage_pool')}")
+        print(f"  {UI.CYAN}5{UI.RESET}. {t('toggle_auto')}")
+        print(f"  {UI.CYAN}6{UI.RESET}. {t('toggle_restart')}")
         print(f"  {UI.CYAN}0{UI.RESET}. {t('exit')}")
         print(f"  {UI.line('-', 40)}")
-        
+
         try:
-            choice = input(f"\n  {t('enter_choice')} (0-8): ").strip()
+            choice = input(f"\n  {t('enter_choice')} (0-6): ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
-        
+
         if choice == "0" or choice.lower() == "q":
             print(f"\n  {UI.GREEN}{t('goodbye')}{UI.RESET}\n")
             break
-        
+
         elif choice == "1":
             # Switch Account
-            print(f"\n  {UI.BOLD}{t('available_accounts')}:{UI.RESET}")
+            print(f"\n  {UI.BOLD}{t('accounts')}:{UI.RESET}")
             for idx, p in enumerate(profiles):
                 marker = f"{UI.GREEN}[*]{UI.RESET}" if p == active else "[ ]"
-                print(f"  {idx + 1}. {marker} {p}")
+                print(f"  {idx + 1:02d}. {marker} {p}")
             try:
-                acc_choice = input(f"\n  {t('enter_account_num')} (1-{len(profiles)}): ").strip()
-                if acc_choice.isdigit() and 1 <= int(acc_choice) <= len(profiles):
+                acc_choice = input(f"\n  {t('enter_idx_email')}: ").strip()
+                if acc_choice:
                     fast_switch(acc_choice)
-                    input(f"\n  {t('press_enter')}")
-            except (EOFError, KeyboardInterrupt):
+                    time.sleep(1)
+            except:
                 pass
-        
+
         elif choice == "2":
-            # Switch to Next
             switch_next()
-            input(f"\n  {t('press_enter')}")
-        
+            time.sleep(1)
+
         elif choice == "3":
             # Change Strategy
             print(f"\n  {UI.BOLD}{t('select_strategy')}:{UI.RESET}")
-            print(f"  1. {UI.CYAN}conservative{UI.RESET}  - {t('conservative_desc')}")
-            print(f"  2. {UI.CYAN}gemini3-first{UI.RESET} - {t('gemini3_desc')}")
-            print(f"  3. {UI.CYAN}custom{UI.RESET}         - {t('custom_desc')}")
+            strategies = [
+                ("1", "conservative"),
+                ("2", "gemini3-first"),
+                ("3", "gemini3.1-pro-only"),
+                ("4", "gemini3.1-series-only"),
+                ("5", "custom")
+            ]
+            for idx, name in strategies:
+                desc = t("strategy_desc").get(name, "")
+                print(f"    {UI.CYAN}{idx}{UI.RESET}. {name.ljust(22)} - {desc}")
+            
             try:
-                strat_choice = input(f"\n  {t('enter_choice')} (1-3): ").strip()
-                if strat_choice == "1":
-                    handle_strategy(["conservative"])
-                elif strat_choice == "2":
-                    handle_strategy(["gemini3-first"])
-                elif strat_choice == "3":
-                    handle_strategy(["custom"])
-                input(f"\n  {t('press_enter')}")
-            except (EOFError, KeyboardInterrupt):
+                s_choice = input(f"\n    {t('enter_choice')} [1-5]: ").strip()
+                if s_choice == '1': handle_strategy(["conservative"])
+                elif s_choice == '2': handle_strategy(["gemini3-first"])
+                elif s_choice == '3': handle_strategy(["gemini3.1-pro-only"])
+                elif s_choice == '4': handle_strategy(["gemini3.1-series-only"])
+                elif s_choice == '5': handle_strategy(["custom"])
+                time.sleep(1)
+            except:
                 pass
-        
+
         elif choice == "4":
-            # View current quota
-            try:
-                # Use subprocess to run independent script to avoid scope pollution
-                subprocess.run(
-                    ["python", str(GEMINI_DIR / "quota_api_client.py")], 
-                    check=False
-                )
-            except Exception as e:
-                print(f"{UI.RED}[Error] Failed to run quota check: {e}{UI.RESET}")
-            input(f"\n  {t('press_enter')}")
+            # Manage Pool
+            handle_pool([])
+            input(f"\n  {t('pool_back')} (Press Enter)...")
 
         elif choice == "5":
-            # Configure Auto-Switch
-            print(f"\n  {UI.BOLD}{t('auto_config')}:{UI.RESET}")
-            print(f"  1. {t('set_threshold')} ({auto_switch.get('threshold', 5)}%)")
-            print(f"  2. {t('set_retries')} ({auto_switch.get('max_retries', 3)})")
-            print(f"  3. {t('set_pattern')} ({auto_switch.get('model_pattern', 'gemini-3.*')})")
-            print(f"  4. {t('toggle_notify')} ({auto_switch.get('notify_on_switch', True)})")
-            print(f"  5. {t('toggle_restart_sub')} ({auto_switch.get('auto_restart', False)})")
-            try:
-                cfg_choice = input(f"\n  {t('enter_choice')} (1-5): ").strip()
-                if cfg_choice == "1":
-                    val = input(f"  {t('threshold')} (0-100): ").strip()
-                    handle_config(["threshold", val])
-                elif cfg_choice == "2":
-                    val = input(f"  Max retries: ").strip()
-                    handle_config(["max_retries", val])
-                elif cfg_choice == "3":
-                    val = input(f"  Model pattern: ").strip()
-                    handle_config(["model_pattern", val])
-                elif cfg_choice == "4":
-                    current = auto_switch.get('notify_on_switch', True)
-                    handle_config(["notify_on_switch", "false" if current else "true"])
-                elif cfg_choice == "5":
-                    current = auto_switch.get('auto_restart', False)
-                    handle_config(["auto_restart", "false" if current else "true"])
-                input(f"\n  {t('press_enter')}")
-            except (EOFError, KeyboardInterrupt):
-                pass
-        
-        elif choice == "6":
             # Toggle Auto-Switch
-            current = auto_switch.get('enabled', True)
-            handle_config(["enabled", "false" if current else "true"])
-            input(f"\n  {t('press_enter')}")
-        
-        elif choice == "7":
-            # Toggle Auto-Restart
-            curr = auto_switch.get("auto_restart", False)
-            auto_switch["auto_restart"] = not curr
-            config["auto_switch"] = auto_switch
-            save_config(config)
-            print(f"{UI.GREEN}[OK] Auto-Restart {'Enabled' if not curr else 'Disabled'}{UI.RESET}")
+            handle_config(["enabled", "false" if is_enabled else "true"])
             time.sleep(1)
 
-        elif choice == "8":
-            # Manage Account Pool
-            print(f"\n  {UI.BOLD}{t('pool_mgmt')}:{UI.RESET}")
-            print(f"  {UI.line('-', 40)}")
-            for idx, p in enumerate(profiles):
-                if p == active:
-                    status = f"{UI.GREEN}● {t('active')}{UI.RESET}"
-                else:
-                    status = f"{UI.DIM}○ {t('standby')}{UI.RESET}"
-                print(f"  {idx + 1:02d}. {p:35s} {status}")
-            print(f"  {UI.line('-', 40)}")
-            print(f"  {t('total')}: {UI.CYAN}{len(profiles)}{UI.RESET}")
-            print(f"\n  {t('options')}:")
-            print(f"  l. {t('pool_login')}")
-            print(f"  r. {t('remove_account')}")
-            print(f"  i. {t('import_creds')}")
-            print(f"  b. {t('back')}")
-            try:
-                pool_choice = input(f"\n  {t('enter_choice')}: ").strip().lower()
-                if pool_choice == "l":
-                    login_account([])
-                elif pool_choice == "r":
-                    acc = input(f"  {t('enter_remove_num')}: ").strip()
-                    remove_account([acc])
-                elif pool_choice == "i":
-                    path = input(f"  {t('enter_path')}: ").strip()
-                    import_account([path])
-                input(f"\n  {t('press_enter')}")
-            except (EOFError, KeyboardInterrupt):
-                pass
-        
+        elif choice == "6":
+            # Toggle Auto-Restart
+            handle_config(["auto_restart", "false" if is_restart else "true"])
+            time.sleep(1)
+
         else:
-            print(f"\n  {UI.YELLOW}{t('invalid_choice')}{UI.RESET}")
-            input(f"\n  {t('press_enter')}")
+            time.sleep(0.5)
 
 
 def main():
