@@ -342,13 +342,41 @@ def fast_switch(target_arg, silent=False):
             print(f"{UI.GREEN}[OK] Already using {target_email}{UI.RESET}")
         return target_email
 
-    # Backup current credentials
+    # Backup current credentials securely
     if current_active:
         curr_dir = PROFILES_DIR / current_active
         curr_dir.mkdir(parents=True, exist_ok=True)
         if CREDS_FILE.exists():
-            shutil.copy2(CREDS_FILE, curr_dir / "oauth_creds.json")
-        if ID_FILE.exists():
+            # SAFETY CHECK: Only backup if it's the SAME account. 
+            # If the user manually logged in with a different account while 'current_active' was set,
+            # blind copying would overwrite the old account's credentials with the new ones.
+            # We verify this by checking if the refresh_token matches the one we originally stored.
+            safe_to_backup = False
+            profile_creds = curr_dir / "oauth_creds.json"
+            if profile_creds.exists():
+                try:
+                    with open(CREDS_FILE, 'r', encoding='utf-8') as f1, open(profile_creds, 'r', encoding='utf-8') as f2:
+                        current_json = json.load(f1)
+                        profile_json = json.load(f2)
+                        
+                        curr_rt = current_json.get("refresh_token")
+                        prof_rt = profile_json.get("refresh_token")
+                        
+                        # STRICT CHECK: Only backup if refresh tokens explicitly match.
+                        if curr_rt and prof_rt and curr_rt == prof_rt:
+                            safe_to_backup = True
+                except Exception:
+                    pass
+            else:
+                # If profile backup doesn't exist, we cannot safely assume CREDS_FILE belongs to this profile.
+                safe_to_backup = False
+            
+            if safe_to_backup:
+                shutil.copy2(CREDS_FILE, curr_dir / "oauth_creds.json")
+            elif not silent:
+                print(f"{UI.YELLOW}[Warning] Skipping credential backup for {current_active} due to mismatched refresh token. Did you manually login?{UI.RESET}")
+                
+        if ID_FILE.exists() and safe_to_backup:
             shutil.copy2(ID_FILE, curr_dir / "google_account_id")
 
     # Perform switch
@@ -399,7 +427,7 @@ def fast_switch(target_arg, silent=False):
 
 
 def switch_next(silent=False):
-    """Switch to the next account in rotation."""
+    """Smart switch to the next account with available quota."""
     profiles = get_profiles()
     if not profiles:
         if not silent:
@@ -407,22 +435,94 @@ def switch_next(silent=False):
         return None
 
     current = get_active_account()
-    if current and current in profiles:
-        current_idx = profiles.index(current)
-        next_idx = (current_idx + 1) % len(profiles)
-    else:
-        next_idx = 0
 
-    next_account = profiles[next_idx]
-    
     # Check if we've cycled through all accounts
-    if next_account == current:
+    if len(profiles) <= 1:
         if not silent:
             print(f"{UI.YELLOW}[Warning] Only one account available.{UI.RESET}")
         return None
 
-    return fast_switch(next_account, silent=silent)
+    if current and current in profiles:
+        current_idx = profiles.index(current)
+    else:
+        current_idx = -1
 
+    config = load_config()
+    auto_switch = config.get("auto_switch", {})
+    threshold = auto_switch.get("threshold", 0) / 100.0
+
+    try:
+        # Import dynamically so it only loads when needed
+        sys.path.insert(0, str(Path(__file__).parent))
+        import quota_api_client
+        # Mute stdout to avoid cluttering JSON output from auto-switch hook
+        import io
+    except ImportError:
+        # Fallback to simple next if api client is not found
+        next_idx = (current_idx + 1) % len(profiles)
+        return fast_switch(profiles[next_idx], silent=silent)
+
+    # Try up to len(profiles) - 1 times to find a good account
+    for offset in range(1, len(profiles)):
+        idx = (current_idx + offset) % len(profiles)
+        acc = profiles[idx]
+
+        if not silent:
+            print(f"{UI.DIM}  [Smart Switch] Checking quota for {acc}...{UI.RESET}")
+
+        cred_file = PROFILES_DIR / acc / "oauth_creds.json"
+        if not cred_file.exists():
+            continue
+
+        try:
+            with open(cred_file, 'r', encoding='utf-8') as f:
+                creds = json.load(f)
+            token = creds.get("access_token")
+
+            # Temporarily redirect stdout so quota_api_client prints don't corrupt JSON
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            try:
+                # 1. Get project id
+                load_result = quota_api_client.call_load_code_assist(token)
+                if not load_result:
+                    continue
+                project_id = load_result.get("cloudaicompanionProject")
+                if not project_id:
+                    continue
+
+                # 2. Get quota
+                quota_result = quota_api_client.call_retrieve_user_quota(token, project_id)
+                if not quota_result:
+                    continue
+            finally:
+                sys.stdout = old_stdout
+
+            buckets = quota_result.get("buckets", [])
+            has_quota = False
+            for bucket in buckets:
+                model_id = bucket.get("modelId", "")
+                if "gemini-3.1-pro" in model_id:
+                    remaining = bucket.get("remainingFraction")
+                    if remaining is not None and remaining > threshold:
+                        has_quota = True
+                        break
+
+            if has_quota:
+                if not silent:
+                    print(f"{UI.GREEN}  [Smart Switch] Found available quota in {acc}!{UI.RESET}")
+                return fast_switch(acc, silent=silent)
+            else:
+                if not silent:
+                    print(f"{UI.YELLOW}  [Smart Switch] No 3.1 Pro quota remaining in {acc}.{UI.RESET}")
+
+        except Exception as e:
+            if not silent:
+                print(f"{UI.RED}  [Smart Switch] Error checking {acc}: {e}{UI.RESET}")
+
+    if not silent:
+        print(f"{UI.RED}[Warning] No other account has gemini-3.1-pro quota available! Not switching.{UI.RESET}")
+    return None
 
 def list_status():
     """Display current status and all accounts."""
