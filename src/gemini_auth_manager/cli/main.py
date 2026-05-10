@@ -1011,7 +1011,10 @@ def handle_quota_view():
 
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from gemini_auth_manager.utils import quota_api_client
+        try:
+            from gemini_auth_manager.utils import quota_api_client
+        except ImportError:
+            import quota_api_client
     except ImportError:
         print(f"  {UI.RED}Failed to load quota API client.{UI.RESET}")
         return

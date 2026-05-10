@@ -271,7 +271,7 @@ def install():
         else:
             print(f"[Warning] BeforeAgent hook not found: {pre_check_script}")
             
-        # Copy restart helper
+        # Copy restart helper and quota API client
         helper_script = source_dir.parent / "utils" / "restart_helper.py"
         target_helper = gemini_dir / "restart_helper.py"
         if helper_script.exists():
@@ -279,6 +279,14 @@ def install():
             print(f"[OK] Restart helper installed: {target_helper.name}")
         else:
             print(f"[Warning] Restart helper not found: {helper_script}")
+
+        api_client_script = source_dir.parent / "utils" / "quota_api_client.py"
+        target_api_client = gemini_dir / "quota_api_client.py"
+        if api_client_script.exists():
+            shutil.copy2(api_client_script, target_api_client)
+            print(f"[OK] Quota API Client installed: {target_api_client.name}")
+        else:
+            print(f"[Warning] Quota API Client not found: {api_client_script}")
         
         # Update auto_switch config
         if "auto_switch" not in config_data:
@@ -286,7 +294,7 @@ def install():
                 "enabled": True,
                 "strategy": "gemini3.1-series-only",
                 "model_pattern": "gemini-3.1.*",
-                "threshold": 10,
+                "threshold": 0,
                 "max_retries": 3,
                 "notify_on_switch": True,
                 "auto_restart": False,
