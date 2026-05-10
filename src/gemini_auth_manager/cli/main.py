@@ -1001,6 +1001,39 @@ def _print_banner():
     print(f"  {UI.DIM}{t('subtitle')}{UI.RESET}")
     print(f"{UI.CYAN}{UI.line('=')}{UI.RESET}")
 
+def refresh_account_token(email, creds, cred_file, silent=False):
+    """Proactively refresh the OAuth token using Python requests to avoid cross-contamination via gemini CLI."""
+    refresh_token = creds.get("refresh_token")
+    if not refresh_token:
+        if not silent: print(f"  {UI.YELLOW}No refresh token found for {email}.{UI.RESET}")
+        return False
+        
+    token_data = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    
+    try:
+        resp = requests.post(GOOGLE_TOKEN_URL, data=token_data, timeout=15)
+        resp.raise_for_status()
+        new_tokens = resp.json()
+        
+        creds["access_token"] = new_tokens.get("access_token")
+        if "refresh_token" in new_tokens:
+            creds["refresh_token"] = new_tokens["refresh_token"]
+        creds["expiry_date"] = int((time.time() + new_tokens.get("expires_in", 3600)) * 1000)
+        
+        with open(cred_file, "w", encoding="utf-8") as f:
+            json.dump(creds, f, indent=2)
+            
+        if not silent: print(f"  {UI.GREEN}[Refresh] Successfully refreshed token for {email}.{UI.RESET}")
+        return True
+    except Exception as e:
+        if not silent: print(f"  {UI.RED}[Refresh] Failed to refresh token for {email}: {e}{UI.RESET}")
+        return False
+
 def handle_quota_view():
     """View quota for all accounts in the pool."""
     print(f"\n{UI.BOLD}Fetching Quota Data for All Accounts...{UI.RESET}")
@@ -1012,9 +1045,11 @@ def handle_quota_view():
     try:
         sys.path.insert(0, str(Path(__file__).parent))
         try:
-            from gemini_auth_manager.utils import quota_api_client
-        except ImportError:
+            # Prefer the local file in ~/.gemini/
             import quota_api_client
+        except ImportError:
+            # Fallback to package import
+            from gemini_auth_manager.utils import quota_api_client
     except ImportError:
         print(f"  {UI.RED}Failed to load quota API client.{UI.RESET}")
         return
@@ -1030,6 +1065,14 @@ def handle_quota_view():
         try:
             with open(cred_file, 'r', encoding='utf-8') as f:
                 creds = json.load(f)
+                
+            expiry_date = creds.get("expiry_date", 0)
+            if expiry_date and datetime.now().timestamp() * 1000 > expiry_date:
+                print(f"  {UI.DIM}Token expired, refreshing...{UI.RESET}")
+                if not refresh_account_token(acc, creds, cred_file, silent=True):
+                    print(f"  {UI.RED}Failed to refresh token.{UI.RESET}")
+                    continue
+                    
             token = creds.get("access_token")
             
             load_result = quota_api_client.call_load_code_assist(token)

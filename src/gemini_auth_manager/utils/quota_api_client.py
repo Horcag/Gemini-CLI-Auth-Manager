@@ -85,41 +85,12 @@ def call_load_code_assist(access_token):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as e:
-        # Debugging: Print status code
-        # print(f"DEBUG: HTTPError caught, status: {e.response.status_code}", file=sys.stderr)
-        
         if e.response.status_code == 401:
-            print(f"⚠️  Token expired (401). Attempting to refresh via Gemini CLI...")
-            try:
-                # Run a cheap command to force CLI to refresh token
-                # On Windows, shell=True is needed to resolve npm scripts (.cmd)
-                import subprocess
-                is_windows = sys.platform == 'win32'
-                
-                subprocess.run(
-                    ["gemini", "-p", "/model list"], 
-                    check=True, 
-                    stdout=subprocess.DEVNULL, 
-                    stderr=subprocess.DEVNULL,
-                    shell=is_windows
-                )
-                
-                # Reload token
-                new_token = load_oauth_token()
-                if new_token != access_token:
-                    print("✅ Token refreshed. Retrying...")
-                    headers["Authorization"] = f"Bearer {new_token}"
-                    response = requests.post(url, headers=headers, json=payload, timeout=30)
-                    response.raise_for_status()
-                    return response.json()
-                else:
-                    print("❌ Token refresh failed (file not updated).")
-            except Exception as refresh_err:
-                print(f"❌ Failed to auto-refresh token: {refresh_err}")
-
-        print(f"❌ Error calling loadCodeAssist: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"   Response: {e.response.text}")
+            print(f"⚠️  Token expired (401). Please refresh the token.")
+        else:
+            print(f"❌ Error calling loadCodeAssist: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"   Response: {e.response.text}")
         return None
     except requests.exceptions.RequestException as e:
         print(f"❌ Error calling loadCodeAssist: {e}")
