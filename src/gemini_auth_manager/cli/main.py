@@ -36,7 +36,7 @@ DEFAULT_CONFIG = {
         "strategy": "gemini3.1-series-only",
         "model_pattern": "gemini-3.1.*",
         "custom_model_pattern": "",
-        "threshold": 10,
+        "threshold": 0,
         "max_retries": 3,
         "notify_on_switch": True,
         "auto_restart": False,
@@ -1001,6 +1001,168 @@ def _print_banner():
     print(f"  {UI.DIM}{t('subtitle')}{UI.RESET}")
     print(f"{UI.CYAN}{UI.line('=')}{UI.RESET}")
 
+def handle_quota_view():
+    """View quota for all accounts in the pool."""
+    print(f"\n{UI.BOLD}Fetching Quota Data for All Accounts...{UI.RESET}")
+    profiles = get_profiles()
+    if not profiles:
+        print(f"  {UI.RED}No accounts found in pool.{UI.RESET}")
+        return
+
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from gemini_auth_manager.utils import quota_api_client
+    except ImportError:
+        print(f"  {UI.RED}Failed to load quota API client.{UI.RESET}")
+        return
+
+    for acc in profiles:
+        print(f"\n{UI.CYAN}{UI.line('-', 40)}{UI.RESET}")
+        print(f"{UI.BOLD}Account: {acc}{UI.RESET}")
+        cred_file = PROFILES_DIR / acc / "oauth_creds.json"
+        if not cred_file.exists():
+            print(f"  {UI.YELLOW}Missing credentials file.{UI.RESET}")
+            continue
+
+        try:
+            with open(cred_file, 'r', encoding='utf-8') as f:
+                creds = json.load(f)
+            token = creds.get("access_token")
+            
+            load_result = quota_api_client.call_load_code_assist(token)
+            if not load_result:
+                print(f"  {UI.RED}Failed to get project info (Token might be expired).{UI.RESET}")
+                continue
+                
+            project_id = load_result.get("cloudaicompanionProject")
+            if not project_id:
+                print(f"  {UI.RED}No Gemini project found for this account.{UI.RESET}")
+                continue
+                
+            quota_result = quota_api_client.call_retrieve_user_quota(token, project_id)
+            if not quota_result:
+                print(f"  {UI.RED}Failed to retrieve quota.{UI.RESET}")
+                continue
+                
+            quota_api_client.display_quota_info(quota_result)
+        except Exception as e:
+            print(f"  {UI.RED}Error: {e}{UI.RESET}")
+            
+    print(f"\n{UI.CYAN}{UI.line('=', 40)}{UI.RESET}")
+
+def handle_doctor():
+    """Run system diagnostics to check health of Gemini Auth Manager."""
+    print(f"\n{UI.BOLD}Running System Diagnostics (Doctor)...{UI.RESET}")
+    print(f"{UI.line('-', 40)}")
+    
+    # Check 1: Directory structure
+    print(f"1. Checking directories...")
+    dirs_to_check = [GEMINI_DIR, PROFILES_DIR]
+    all_dirs_ok = True
+    for d in dirs_to_check:
+        if d.exists() and d.is_dir():
+            print(f"   {UI.GREEN}[OK]{UI.RESET} {d}")
+        else:
+            print(f"   {UI.RED}[FAIL]{UI.RESET} {d} is missing!")
+            all_dirs_ok = False
+            
+    # Check 2: Active Account
+    print(f"\n2. Checking active account...")
+    active = get_active_account()
+    if active:
+        print(f"   {UI.GREEN}[OK]{UI.RESET} Active account: {active}")
+        active_creds = PROFILES_DIR / active / "oauth_creds.json"
+        if active_creds.exists():
+            print(f"   {UI.GREEN}[OK]{UI.RESET} Credentials exist for active account")
+        else:
+            print(f"   {UI.RED}[FAIL]{UI.RESET} Credentials missing for active account!")
+    else:
+        print(f"   {UI.YELLOW}[WARN]{UI.RESET} No active account selected")
+
+    # Check 3: Current config vs Settings
+    print(f"\n3. Checking configuration...")
+    config = load_config()
+    print(f"   {UI.GREEN}[OK]{UI.RESET} Config loaded")
+    
+    # Check hooks
+    settings_file = GEMINI_DIR / "settings.json"
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            hooks = settings.get("hooks", {})
+            if "AfterAgent" in hooks:
+                print(f"   {UI.GREEN}[OK]{UI.RESET} AfterAgent hook configured")
+            else:
+                print(f"   {UI.YELLOW}[WARN]{UI.RESET} AfterAgent hook missing")
+                
+            if "BeforeAgent" in hooks:
+                print(f"   {UI.GREEN}[OK]{UI.RESET} BeforeAgent hook configured")
+            else:
+                print(f"   {UI.YELLOW}[WARN]{UI.RESET} BeforeAgent hook missing")
+        except:
+            print(f"   {UI.RED}[FAIL]{UI.RESET} Cannot parse settings.json")
+    else:
+        print(f"   {UI.YELLOW}[WARN]{UI.RESET} settings.json missing (Hooks not installed)")
+
+    print(f"\n{UI.line('=', 40)}")
+    print(f"{UI.GREEN}Diagnostics complete.{UI.RESET}")
+
+def handle_refresh_all():
+    """Force refresh OAuth tokens for all accounts."""
+    print(f"\n{UI.BOLD}Force Refreshing Tokens for All Accounts...{UI.RESET}")
+    profiles = get_profiles()
+    if not profiles:
+        print(f"  {UI.RED}No accounts found in pool.{UI.RESET}")
+        return
+
+    for acc in profiles:
+        print(f"  Refreshing: {acc}...", end=" ", flush=True)
+        cred_file = PROFILES_DIR / acc / "oauth_creds.json"
+        if not cred_file.exists():
+            print(f"{UI.YELLOW}No credentials file{UI.RESET}")
+            continue
+            
+        try:
+            with open(cred_file, 'r', encoding='utf-8') as f:
+                creds = json.load(f)
+                
+            refresh_token = creds.get("refresh_token")
+            if not refresh_token:
+                print(f"{UI.YELLOW}No refresh token{UI.RESET}")
+                continue
+                
+            token_data = {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+            
+            resp = requests.post(GOOGLE_TOKEN_URL, data=token_data)
+            resp.raise_for_status()
+            new_tokens = resp.json()
+            
+            creds["access_token"] = new_tokens.get("access_token")
+            if "refresh_token" in new_tokens:
+                creds["refresh_token"] = new_tokens["refresh_token"]
+            creds["expiry_date"] = int((time.time() + new_tokens.get("expires_in", 3600)) * 1000)
+            
+            with open(cred_file, "w", encoding="utf-8") as f:
+                json.dump(creds, f, indent=2)
+                
+            print(f"{UI.GREEN}Success{UI.RESET}")
+        except Exception as e:
+            print(f"{UI.RED}Failed ({e}){UI.RESET}")
+            
+    # Clear cache to ensure new tokens are used
+    cache_file = GEMINI_DIR / "mcp-oauth-tokens-v2.json"
+    if cache_file.exists():
+        try:
+            cache_file.unlink()
+        except:
+            pass
+
 def interactive_menu():
     """Interactive configuration menu."""
     while True:
@@ -1019,7 +1181,7 @@ def interactive_menu():
         enabled_text = t('enabled') if is_enabled else t('disabled')
         print(f"  {t('auto_switch')}    : {UI.GREEN if is_enabled else UI.RED}{enabled_text}{UI.RESET}")
         print(f"  {t('strategy')}       : {UI.CYAN}{auto_switch.get('strategy', 'gemini3.1-series-only')}{UI.RESET}")
-        print(f"  {t('threshold')}      : {UI.YELLOW}{auto_switch.get('threshold', 10)}%{UI.RESET}")
+        print(f"  {t('threshold')}      : {UI.YELLOW}{auto_switch.get('threshold', 0)}%{UI.RESET}")
         
         is_restart = auto_switch.get('auto_restart', False)
         restart_text = t('enabled') if is_restart else t('disabled')
@@ -1033,11 +1195,14 @@ def interactive_menu():
         print(f"  {UI.CYAN}4{UI.RESET}. {t('manage_pool')}")
         print(f"  {UI.CYAN}5{UI.RESET}. {t('toggle_auto')}")
         print(f"  {UI.CYAN}6{UI.RESET}. {t('toggle_restart')}")
+        print(f"  {UI.CYAN}7{UI.RESET}. View Quota (All Accounts)")
+        print(f"  {UI.CYAN}8{UI.RESET}. Run System Diagnostics (Doctor)")
+        print(f"  {UI.CYAN}9{UI.RESET}. Force Refresh All Tokens")
         print(f"  {UI.CYAN}0{UI.RESET}. {t('exit')}")
         print(f"  {UI.line('-', 40)}")
 
         try:
-            choice = input(f"\n  {t('enter_choice')} (0-6): ").strip()
+            choice = input(f"\n  {t('enter_choice')} (0-9): ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -1103,6 +1268,18 @@ def interactive_menu():
             # Toggle Auto-Restart
             handle_config(["auto_restart", "false" if is_restart else "true"])
             time.sleep(1)
+
+        elif choice == "7":
+            handle_quota_view()
+            input(f"\n  Press Enter to continue...")
+
+        elif choice == "8":
+            handle_doctor()
+            input(f"\n  Press Enter to continue...")
+
+        elif choice == "9":
+            handle_refresh_all()
+            input(f"\n  Press Enter to continue...")
 
         else:
             time.sleep(0.5)
