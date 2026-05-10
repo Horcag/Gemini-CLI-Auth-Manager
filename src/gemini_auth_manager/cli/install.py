@@ -181,9 +181,9 @@ def install():
     hooks_dir = gemini_dir / "hooks"
     
     # Source files
-    core_script = source_dir / "gemini_cli_auth_manager.py"
-    hook_script = source_dir / "quota_auto_switch.py"  # AfterAgent hook
-    pre_check_script = source_dir / "quota_pre_check.py"  # BeforeAgent hook
+    core_script = source_dir / "main.py"
+    hook_script = source_dir.parent / "hooks" / "quota_auto_switch.py"  # AfterAgent hook
+    pre_check_script = source_dir.parent / "hooks" / "quota_pre_check.py"  # BeforeAgent hook
 
     # Target files
     target_script = gemini_dir / "gemini_cli_auth_manager.py"
@@ -271,7 +271,7 @@ def install():
             print(f"[Warning] BeforeAgent hook not found: {pre_check_script}")
             
         # Copy restart helper
-        helper_script = source_dir / "restart_helper.py"
+        helper_script = source_dir.parent / "utils" / "restart_helper.py"
         target_helper = gemini_dir / "restart_helper.py"
         if helper_script.exists():
             shutil.copy2(helper_script, target_helper)

@@ -454,7 +454,7 @@ def switch_next(silent=False):
     try:
         # Import dynamically so it only loads when needed
         sys.path.insert(0, str(Path(__file__).parent))
-        import quota_api_client
+        from gemini_auth_manager.utils import quota_api_client
         # Mute stdout to avoid cluttering JSON output from auto-switch hook
         import io
     except ImportError:

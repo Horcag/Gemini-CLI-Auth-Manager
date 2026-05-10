@@ -278,7 +278,7 @@ def switch_account():
     """Call gchange next to switch account."""
     try:
         result = subprocess.run(
-            ["gchange", "next"],
+            ["python", "-m", "gemini_auth_manager.cli.main", "next"],
             capture_output=True,
             text=True,
             timeout=10
