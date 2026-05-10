@@ -164,14 +164,14 @@ def format_reset_time(reset_time_str):
         diff = reset_time - now
         
         if diff.total_seconds() <= 0:
-            return "(已重置)"
+            return "(Reset)"
         
         hours = int(diff.total_seconds() // 3600)
         minutes = int((diff.total_seconds() % 3600) // 60)
         
         if hours > 0:
-            return f"(重置于 {hours}h {minutes}m 后)"
-        return f"(重置于 {minutes}m 后)"
+            return f"(Resets in {hours}h {minutes}m)"
+        return f"(Resets in {minutes}m)"
     except:
         return ""
 
@@ -183,11 +183,22 @@ def display_quota_info(quota_response):
     if not buckets:
         print("❌ No quota information available")
         return
+        
+    # Filter out older duplicated models
+    filtered_buckets = []
+    ignore_prefixes = ["gemini-2.5", "gemini-3-pro"]
+    for b in buckets:
+        model_id = b.get("modelId", "")
+        if any(model_id.startswith(p) for p in ignore_prefixes):
+            continue
+        filtered_buckets.append(b)
+        
+    buckets = filtered_buckets
     
     print("\n" + "=" * 70)
-    print("📊 Gemini CLI 配额状态")
+    print("📊 Gemini CLI Quota Status")
     print("=" * 70)
-    print(f"{'模型':<30} {'剩余配额':<15} {'重置时间'}")
+    print(f"{'Model':<30} {'Remaining':<15} {'Reset Time'}")
     print("-" * 70)
     
     for bucket in buckets:
@@ -222,7 +233,7 @@ def display_quota_info(quota_response):
     ]
     
     if low_quota_models:
-        print("\n⚠️  以下模型配额较低，建议切换账号：")
+        print("\n⚠️  The following models have low quota. Consider switching:")
         for b in low_quota_models:
             print(f"   - {b.get('modelId')}: {b.get('remainingFraction', 0) * 100:.1f}%")
     
