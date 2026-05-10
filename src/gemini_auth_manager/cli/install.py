@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Gemini CLI Auth Manager v2.3 - Installer
+Gemini CLI Auth Manager v2.5 - Installer
 Installs account manager with optional auto-switch hook.
 """
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys

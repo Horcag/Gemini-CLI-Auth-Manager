@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "strategy": "gemini3.1-series-only",
         "model_pattern": "gemini-3.1.*",
-        "threshold": 10,
+        "threshold": 0,
         "max_retries": 3,
         "notify_on_switch": True
     }
