@@ -143,7 +143,7 @@ LANG = {
         "standby": "Standby"
     },
     "cn": {
-        "title": "GEMINI CLI 账号管理器 v2.3",
+        "title": "GEMINI CLI 账号管理器 v2.5",
         "subtitle": "极速切换 + 自动轮换 | By Besty",
         "status": "状态",
         "active": "正在使用",
