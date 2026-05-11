@@ -12,6 +12,7 @@ import sys
 import time
 import webbrowser
 import requests
+from datetime import datetime
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -36,7 +37,7 @@ DEFAULT_CONFIG = {
         "strategy": "gemini3.1-series-only",
         "model_pattern": "gemini-3.1.*",
         "custom_model_pattern": "",
-        "threshold": 0,
+        "threshold": 99,
         "max_retries": 3,
         "notify_on_switch": True,
         "auto_restart": False,
@@ -454,7 +455,10 @@ def switch_next(silent=False):
     try:
         # Import dynamically so it only loads when needed
         sys.path.insert(0, str(Path(__file__).parent))
-        from gemini_auth_manager.utils import quota_api_client
+        try:
+            import quota_api_client
+        except ImportError:
+            from gemini_auth_manager.utils import quota_api_client
         # Mute stdout to avoid cluttering JSON output from auto-switch hook
         import io
     except ImportError:
@@ -477,6 +481,13 @@ def switch_next(silent=False):
         try:
             with open(cred_file, 'r', encoding='utf-8') as f:
                 creds = json.load(f)
+                
+            expiry_date = creds.get("expiry_date", 0)
+            if expiry_date and datetime.now().timestamp() * 1000 > expiry_date:
+                if not silent:
+                    print(f"{UI.DIM}  [Smart Switch] Token expired, refreshing safely...{UI.RESET}")
+                refresh_account_token(acc, creds, cred_file, silent=silent)
+                
             token = creds.get("access_token")
 
             # Temporarily redirect stdout so quota_api_client prints don't corrupt JSON
