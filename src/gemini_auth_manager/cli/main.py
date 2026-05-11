@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
         "strategy": "gemini3.1-series-only",
         "model_pattern": "gemini-3.1.*",
         "custom_model_pattern": "",
-        "threshold": 99,
+        "threshold": 1,
         "max_retries": 3,
         "notify_on_switch": True,
         "auto_restart": False,
@@ -496,6 +496,16 @@ def switch_next(silent=False):
             try:
                 # 1. Get project id
                 load_result = quota_api_client.call_load_code_assist(token)
+                if not load_result:
+                    # Token might be invalid despite expiry_date. Force refresh and retry!
+                    sys.stdout = old_stdout
+                    if not silent:
+                        print(f"{UI.DIM}  [Smart Switch] Token invalid. Forcing refresh...{UI.RESET}")
+                    sys.stdout = io.StringIO()
+                    if refresh_account_token(acc, creds, cred_file, silent=silent):
+                        token = creds.get("access_token")
+                        load_result = quota_api_client.call_load_code_assist(token)
+                        
                 if not load_result:
                     continue
                 project_id = load_result.get("cloudaicompanionProject")
@@ -1243,6 +1253,50 @@ def interactive_menu():
         is_restart = auto_switch.get('auto_restart', False)
         restart_text = t('enabled') if is_restart else t('disabled')
         print(f"  Auto-Restart      : {UI.GREEN if is_restart else UI.RED}{restart_text}{UI.RESET}")
+
+        active_quota = "Unknown"
+        if active:
+            try:
+                sys.path.insert(0, str(Path(__file__).parent))
+                try:
+                    import quota_api_client
+                except ImportError:
+                    from gemini_auth_manager.utils import quota_api_client
+                    
+                cred_file = PROFILES_DIR / active / "oauth_creds.json"
+                if cred_file.exists():
+                    with open(cred_file, 'r', encoding='utf-8') as f:
+                        creds = json.load(f)
+                    # Check token expiry briefly
+                    expiry = creds.get("expiry_date", 0)
+                    if expiry and expiry < time.time() * 1000:
+                        refresh_account_token(active, creds, cred_file, silent=True)
+                        
+                    token = creds.get("access_token")
+                    
+                    # Silence stdout for the fast fetch
+                    import io
+                    old_stdout = sys.stdout
+                    sys.stdout = io.StringIO()
+                    try:
+                        load_result = quota_api_client.call_load_code_assist(token)
+                        if load_result:
+                            pid = load_result.get("cloudaicompanionProject")
+                            if pid:
+                                qr = quota_api_client.call_retrieve_user_quota(token, pid)
+                                if qr:
+                                    for b in qr.get("buckets", []):
+                                        if b.get("modelId", "") == "gemini-3.1-pro-preview":
+                                            rem = b.get("remainingFraction")
+                                            if rem is not None:
+                                                active_quota = f"{rem * 100:.1f}%"
+                                            break
+                    finally:
+                        sys.stdout = old_stdout
+            except Exception:
+                pass
+                
+        print(f"  Pro Quota      : {UI.CYAN}{active_quota}{UI.RESET}")
 
         print(f"\n  {UI.BOLD}{t('menu')}:{UI.RESET}")
         print(f"  {UI.line('-', 40)}")

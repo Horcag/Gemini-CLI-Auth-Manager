@@ -157,12 +157,11 @@ def display_quota_info(quota_response):
         
     # Filter out older duplicated models
     filtered_buckets = []
-    ignore_prefixes = ["gemini-2.5", "gemini-3-pro"]
+    allowed_prefixes = ["gemini-3.1", "gemini-3-flash", "gemini-4"]
     for b in buckets:
         model_id = b.get("modelId", "")
-        if any(model_id.startswith(p) for p in ignore_prefixes):
-            continue
-        filtered_buckets.append(b)
+        if any(model_id.startswith(p) for p in allowed_prefixes):
+            filtered_buckets.append(b)
         
     buckets = filtered_buckets
     
