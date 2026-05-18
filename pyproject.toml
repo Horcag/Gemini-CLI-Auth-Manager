@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gemini-auth-manager"
+version = "2.5.0"
+description = "Gemini CLI Auth Manager - Instant multi-account switching and auto-rotation"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Besty"}
+]
+dependencies = [
+    "requests",
+]
+
+[project.scripts]
+gchange = "gemini_auth_manager.cli.main:main"
+gchange-install = "gemini_auth_manager.cli.install:install"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemini_auth_manager"]

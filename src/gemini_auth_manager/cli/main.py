@@ -12,7 +12,7 @@ import sys
 import time
 import webbrowser
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -596,6 +596,7 @@ def list_status():
     print(f"  gchange pool               Manage account pool")
     print(f"  gchange strategy [name]    View/set strategy")
     print(f"  gchange config [key] [val] View/set config")
+    print(f"  gchange ping [all]         Ping dormant accounts to start timers")
     print(f"\n{UI.CYAN}{UI.line('=')}{UI.RESET}\n")
 
 
@@ -1189,39 +1190,39 @@ def handle_refresh_all():
         if not cred_file.exists():
             print(f"{UI.YELLOW}No credentials file{UI.RESET}")
             continue
-            
+
         try:
             with open(cred_file, 'r', encoding='utf-8') as f:
                 creds = json.load(f)
-                
+
             refresh_token = creds.get("refresh_token")
             if not refresh_token:
                 print(f"{UI.YELLOW}No refresh token{UI.RESET}")
                 continue
-                
+
             token_data = {
                 "client_id": GOOGLE_CLIENT_ID,
                 "client_secret": GOOGLE_CLIENT_SECRET,
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token",
             }
-            
+
             resp = requests.post(GOOGLE_TOKEN_URL, data=token_data)
             resp.raise_for_status()
             new_tokens = resp.json()
-            
+
             creds["access_token"] = new_tokens.get("access_token")
             if "refresh_token" in new_tokens:
                 creds["refresh_token"] = new_tokens["refresh_token"]
-            creds["expiry_date"] = int((time.time() + new_tokens.get("expires_in", 3600)) * 1000)
-            
+            creds["expiry_date"] = int((time.time() + new_tokens.get("expires_in", 3600)) * 1000)       
+
             with open(cred_file, "w", encoding="utf-8") as f:
                 json.dump(creds, f, indent=2)
-                
+
             print(f"{UI.GREEN}Success{UI.RESET}")
         except Exception as e:
             print(f"{UI.RED}Failed ({e}){UI.RESET}")
-            
+
     # Clear cache to ensure new tokens are used
     cache_file = GEMINI_DIR / "mcp-oauth-tokens-v2.json"
     if cache_file.exists():
@@ -1229,6 +1230,120 @@ def handle_refresh_all():
             cache_file.unlink()
         except:
             pass
+
+def handle_ping(args):
+    """Ping accounts that have dormant quota timers to start the countdown."""
+    config = load_config()
+    auto_switch = config.get("auto_switch", {})
+    ping_cmd = auto_switch.get("ping_command", "gemini -p \"hi\"")
+
+    force_all = args and args[0].lower() == "all"
+
+    profiles = get_profiles()
+    if not profiles:
+        print(f"{UI.RED}No accounts found in pool.{UI.RESET}")
+        return
+
+    try:
+        # When running from installed location (~/.gemini/gemini_cli_auth_manager.py), 
+        # quota_api_client is in the same directory
+        sys.path.insert(0, str(Path(__file__).parent))
+        import quota_api_client
+    except ImportError:
+        try:
+            # Fallback for local dev
+            from gemini_auth_manager.utils import quota_api_client
+        except ImportError:
+            print(f"{UI.RED}Failed to load quota API client.{UI.RESET}")
+            return
+
+    original_active = get_active_account()
+    pinged_count = 0
+
+    print(f"\n{UI.BOLD}Checking accounts for dormant quota timers...{UI.RESET}")
+    print(f"{UI.DIM}Ping command configured as: {ping_cmd}{UI.RESET}\n")
+
+    for acc in profiles:
+        print(f"  Checking {acc}...", end=" ", flush=True)
+        cred_file = PROFILES_DIR / acc / "oauth_creds.json"
+        if not cred_file.exists():
+            print(f"{UI.YELLOW}No credentials{UI.RESET}")
+            continue
+
+        try:
+            with open(cred_file, 'r', encoding='utf-8') as f:
+                creds = json.load(f)
+
+            # Briefly check token
+            expiry = creds.get("expiry_date", 0)
+            if expiry and expiry < time.time() * 1000:
+                refresh_account_token(acc, creds, cred_file, silent=True)
+
+            token = creds.get("access_token")
+
+            # Mute stdout to avoid clutter
+            import io
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+
+            needs_ping = False
+            reset_time = ""
+            try:
+                load_result = quota_api_client.call_load_code_assist(token)
+                if load_result:
+                    pid = load_result.get("cloudaicompanionProject")
+                    if pid:
+                        qr = quota_api_client.call_retrieve_user_quota(token, pid)
+                        if qr:
+                            for b in qr.get("buckets", []):
+                                if "gemini-3.1-pro" in b.get("modelId", ""):
+                                    reset_time = b.get("resetTime", "")
+                                    if reset_time:
+                                        # Detect if timer is stuck at ~24h
+                                        try:
+                                            # Parse format like "2026-05-12T15:05:46Z"
+                                            dt = datetime.strptime(reset_time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                                            # Compare to UTC now
+                                            now_utc = datetime.now(timezone.utc)
+                                            diff_hours = (dt - now_utc).total_seconds() / 3600.0
+                                            if diff_hours > 23.5 or force_all:
+                                                needs_ping = True
+                                        except Exception:
+                                            # Fallback to string matching if parsing fails
+                                            if "T23:59" in reset_time or "T00:00" in reset_time or force_all:
+                                                needs_ping = True
+                                    break
+            finally:
+                sys.stdout = old_stdout
+
+            if needs_ping:
+                if force_all:
+                    print(f"{UI.YELLOW}Force pinging...{UI.RESET}")
+                else:
+                    print(f"{UI.YELLOW}Dormant timer detected ({reset_time}). Pinging...{UI.RESET}")
+
+                # Switch to account temporarily
+                fast_switch(acc, silent=True)
+
+                # Run the ping command synchronously to avoid credential race conditions
+                try:
+                    subprocess.run(ping_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    print(f"    {UI.GREEN}-> Ping sent successfully!{UI.RESET}")
+                    pinged_count += 1
+                except Exception as e:
+                    print(f"    {UI.RED}-> Ping failed: {e}{UI.RESET}")
+            else:
+                print(f"{UI.GREEN}Timer is active ({reset_time}).{UI.RESET}")
+
+        except Exception as e:
+            print(f"{UI.RED}Error: {e}{UI.RESET}")
+
+    # Restore original account
+    if original_active and original_active != get_active_account():
+        print(f"\n{UI.DIM}Restoring original account: {original_active}...{UI.RESET}")
+        fast_switch(original_active, silent=True)
+
+    print(f"\n{UI.BOLD}Done. Pinged {pinged_count} accounts.{UI.RESET}\n")
 
 def interactive_menu():
     """Interactive configuration menu."""
@@ -1418,6 +1533,8 @@ def main():
     # Command routing
     if command == "next":
         switch_next()
+    elif command == "ping":
+        handle_ping(args)
     elif command == "menu":
         interactive_menu()
     elif command == "pool":
@@ -1430,6 +1547,8 @@ def main():
         list_status()
     elif command in ["help", "-h", "--help"]:
         list_status()
+    elif command == "doctor":
+        handle_doctor()
     else:
         # Treat as account identifier
         fast_switch(command)

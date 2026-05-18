@@ -30,9 +30,8 @@
 ## 🚀 快速安装
 
 ```bash
-git clone https://github.com/Besty0728/Gemini-CLI-Auth-Manager.git
-cd gemini-auth-manager
-python install.py
+uv tool install git+https://github.com/horcag/Gemini-CLI-Auth-Manager.git
+gchange-install
 ```
 
 ### 依赖要求
@@ -110,4 +109,4 @@ python install.py
 ---
 
 ## ❤️ 贡献与反馈
-由 Besty 开发。欢迎提交 Issue 或 PR！
+由 Besty 开发（由 horcag 分叉和维护）。欢迎提交 Issue 或 PR！

@@ -30,9 +30,8 @@
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/Besty0728/Gemini-CLI-Auth-Manager.git
-cd gemini-auth-manager
-python install.py
+uv tool install git+https://github.com/horcag/Gemini-CLI-Auth-Manager.git
+gchange-install
 ```
 
 ### Dependencies
@@ -110,4 +109,4 @@ Settings are stored in `~/.gemini/auth_config.json`.
 ---
 
 ## ❤️ Credits
-Developed by Besty. Feel free to submit Issues or PRs!
+Developed by Besty (Forked and maintained by horcag). Feel free to submit Issues or PRs!

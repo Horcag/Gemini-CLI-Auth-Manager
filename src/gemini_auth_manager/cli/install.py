@@ -201,27 +201,13 @@ def install():
     commands_dir.mkdir(parents=True, exist_ok=True)
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
-    # 4. Copy Core Script
-    if core_script.exists():
-        shutil.copy2(core_script, target_script)
-        print(f"[OK] Core script installed: {target_script.name}")
-    else:
-        print(f"[Error] Source file not found: {core_script}")
-        return
-
-    # 5. Create Batch Launcher
-    bat_content = '@echo off\r\npython "%USERPROFILE%\\.gemini\\gemini_cli_auth_manager.py" %*'
-    try:
-        with open(target_bat, 'w', encoding='utf-8') as f:
-            f.write(bat_content)
-        print(f"[OK] Batch launcher created: {target_bat.name}")
-    except Exception as e:
-        print(f"[Error] Creating batch file: {e}")
+    # 4. Copy Core Script (Skipped, handled by uv tool)
+    # 5. Create Batch Launcher (Skipped, handled by uv tool)
 
     # 6. Create TOML Command
     toml_content = (
         f'description = "{texts["desc"]}"\n'
-        f'prompt = "!{{python \\"{target_script.as_posix()}\\" {{{{args}}}}}}"\n'
+        f'prompt = "!{{gchange {{{{args}}}}}}"\n'
     )
     try:
         with open(target_toml, 'w', encoding='utf-8') as f:
@@ -331,8 +317,8 @@ def install():
         json.dump(config_data, f, indent=2, ensure_ascii=False)
     print(f"[OK] Language set to: {lang_key.upper()}")
 
-    # 8. Update PATH
-    add_to_path(gemini_dir)
+    # 8. Update PATH (Skipped, handled by uv tool)
+    # add_to_path(gemini_dir)
 
     # 9. Success Message
     print("\n" + "=" * 50)
