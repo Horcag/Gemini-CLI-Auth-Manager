@@ -95,6 +95,11 @@ Settings are stored in `~/.gemini/auth_config.json`.
 
 ## 📅 Changelog
 
+### [v2.6] - 2026-05-18
+- **🚀 Installation**: Migrated to `uv tool` for instant, isolated global installation.
+- **🗑️ Uninstall**: Added one-click uninstall functionality (`gchange uninstall`).
+- **✨ Enhancement**: Version bump and synchronization with upstream improvements.
+
 ### [v2.3] - 2026-03-22
 - **✨ Enhancement**: Fully updated UI and internal logic to version 2.3.
 - **✨ Optimization**: Improved response speed and accuracy of quota monitoring.

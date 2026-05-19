@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gemini-auth-manager"
-version = "2.5.0"
+version = "2.6.0"
 description = "Gemini CLI Auth Manager - Instant multi-account switching and auto-rotation"
 readme = "README.md"
 requires-python = ">=3.8"
